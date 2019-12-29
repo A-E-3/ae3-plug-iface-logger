@@ -1,5 +1,5 @@
 /**
- * 
+ *
  */
 package ru.myx.ae3.report;
 
@@ -16,354 +16,113 @@ import ru.myx.ae3.status.StatusInfo;
 import ru.myx.util.FifoQueueMultithreadEnqueue;
 import ru.myx.util.FifoQueueServiceMultithreadSwitching;
 
-/**
- * @author myx
- * 
- */
+/** @author myx */
 public final class EventInterceptor extends LogReceiver implements ActService {
-	
-	private static Set<ObjectTarget<byte[]>>	targets		= new HashSet<>();
-	
-	private static EventInterceptor				INSTANCE	= new EventInterceptor();
-	
-	private static final Field					FIELD_SPY;
+
+	private static Set<ObjectTarget<byte[]>> targets = new HashSet<>();
+
+	private static EventInterceptor INSTANCE = new EventInterceptor();
+
+	private static final Field FIELD_SPY;
 	static {
-		/**
-		 * Just for compiler check for this field
-		 */
+		/** Just for compiler check for this field */
 		if (BaseObject.NULL.baseValue() != null) { // false
 			ReceiverMultiple.SPY = null;
 		}
-		/**
-		 * We have to use reflection
-		 */
+		/** We have to use reflection */
 		try {
-			final Field field = ReceiverMultiple.class.getDeclaredField( "SPY" );
+			final Field field = ReceiverMultiple.class.getDeclaredField("SPY");
 			assert field != null : "SPY field expected!";
-			field.setAccessible( true );
+			field.setAccessible(true);
 			FIELD_SPY = field;
 		} catch (final SecurityException e) {
-			throw new RuntimeException( e );
+			throw new RuntimeException(e);
 		} catch (final NoSuchFieldException e) {
-			throw new RuntimeException( e );
+			throw new RuntimeException(e);
 		}
 	}
-	
-	/**
-	 * @param target
-	 * @return
-	 */
+
+	private static final byte[] DIGIT_ONES = {
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2',
+			'3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5',
+			'6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '1', '2', '3', '4', '5', '6', '7', '8',
+			'9',
+	};
+
+	private static final byte[] DIGIT_TENS = {
+			'0', '0', '0', '0', '0', '0', '0', '0', '0', '0', '1', '1', '1', '1', '1', '1', '1', '1', '1', '1', '2', '2', '2', '2', '2', '2', '2', '2', '2', '2', '3', '3', '3',
+			'3', '3', '3', '3', '3', '3', '3', '4', '4', '4', '4', '4', '4', '4', '4', '4', '4', '5', '5', '5', '5', '5', '5', '5', '5', '5', '5', '6', '6', '6', '6', '6', '6',
+			'6', '6', '6', '6', '7', '7', '7', '7', '7', '7', '7', '7', '7', '7', '8', '8', '8', '8', '8', '8', '8', '8', '8', '8', '9', '9', '9', '9', '9', '9', '9', '9', '9',
+			'9',
+	};
+
+	private static final byte[] DIGITS = {
+			'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w',
+			'x', 'y', 'z'
+	};
+
+	/** @param target
+	 * @return */
 	public static final boolean doRegister(final ObjectTarget<byte[]> target) {
+
 		synchronized (EventInterceptor.targets) {
 			try {
 				try {
-					return target.absorb( "done.\r\n".getBytes( Engine.CHARSET_UTF8 ) )
-							&& EventInterceptor.targets.add( target );
+					return target.absorb("done.\r\n".getBytes(Engine.CHARSET_UTF8)) && EventInterceptor.targets.add(target);
 				} catch (final RuntimeException e) {
 					throw e;
 				} catch (final Exception e) {
-					throw new RuntimeException( e );
+					throw new RuntimeException(e);
 				}
-				
+
 			} finally {
 				try {
-					EventInterceptor.FIELD_SPY.set( null, EventInterceptor.targets.isEmpty()
-							? null
-							: EventInterceptor.INSTANCE );
+					EventInterceptor.FIELD_SPY.set(
+							null,
+							EventInterceptor.targets.isEmpty()
+								? null
+								: EventInterceptor.INSTANCE);
 				} catch (final IllegalArgumentException e) {
-					throw new RuntimeException( e );
+					throw new RuntimeException(e);
 				} catch (final IllegalAccessException e) {
-					throw new RuntimeException( e );
+					throw new RuntimeException(e);
 				}
 			}
 		}
 	}
-	
-	/**
-	 * @param target
-	 * @return
-	 */
+
+	/** @param target
+	 * @return */
 	public static final boolean doUnRegister(final ObjectTarget<byte[]> target) {
+
 		synchronized (EventInterceptor.targets) {
 			try {
-				return EventInterceptor.targets.remove( target );
+				return EventInterceptor.targets.remove(target);
 			} finally {
 				try {
-					EventInterceptor.FIELD_SPY.set( null, EventInterceptor.targets.isEmpty()
-							? null
-							: EventInterceptor.INSTANCE );
+					EventInterceptor.FIELD_SPY.set(
+							null,
+							EventInterceptor.targets.isEmpty()
+								? null
+								: EventInterceptor.INSTANCE);
 				} catch (final IllegalArgumentException e) {
-					throw new RuntimeException( e );
+					throw new RuntimeException(e);
 				} catch (final IllegalAccessException e) {
-					throw new RuntimeException( e );
+					throw new RuntimeException(e);
 				}
 			}
 		}
 	}
-	
-	/**
-	 * @param data
-	 */
+
+	/** @param data */
 	public static final void statusFillStatic(final StatusInfo data) {
-		EventInterceptor.INSTANCE.statusFill( data );
+
+		EventInterceptor.INSTANCE.statusFill(data);
 	}
-	
-	private boolean													destroyed	= false;
-	
-	private final FifoQueueServiceMultithreadSwitching<Event>	queue		= new FifoQueueServiceMultithreadSwitching<>();
-	
-	private volatile int											stsLoops;
-	
-	private volatile int											stsUnhandled;
-	
-	private byte[]													rBuffer		= new byte[2048];
-	
-	private int														rBufferLength;
-	
-	private static final byte[]										DIGIT_ONES	= {
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',																};
-	
-	private static final byte[]										DIGIT_TENS	= {
-			'0',
-			'0',
-			'0',
-			'0',
-			'0',
-			'0',
-			'0',
-			'0',
-			'0',
-			'0',
-			'1',
-			'1',
-			'1',
-			'1',
-			'1',
-			'1',
-			'1',
-			'1',
-			'1',
-			'1',
-			'2',
-			'2',
-			'2',
-			'2',
-			'2',
-			'2',
-			'2',
-			'2',
-			'2',
-			'2',
-			'3',
-			'3',
-			'3',
-			'3',
-			'3',
-			'3',
-			'3',
-			'3',
-			'3',
-			'3',
-			'4',
-			'4',
-			'4',
-			'4',
-			'4',
-			'4',
-			'4',
-			'4',
-			'4',
-			'4',
-			'5',
-			'5',
-			'5',
-			'5',
-			'5',
-			'5',
-			'5',
-			'5',
-			'5',
-			'5',
-			'6',
-			'6',
-			'6',
-			'6',
-			'6',
-			'6',
-			'6',
-			'6',
-			'6',
-			'6',
-			'7',
-			'7',
-			'7',
-			'7',
-			'7',
-			'7',
-			'7',
-			'7',
-			'7',
-			'7',
-			'8',
-			'8',
-			'8',
-			'8',
-			'8',
-			'8',
-			'8',
-			'8',
-			'8',
-			'8',
-			'9',
-			'9',
-			'9',
-			'9',
-			'9',
-			'9',
-			'9',
-			'9',
-			'9',
-			'9',																};
-	
-	private static final byte[]										DIGITS		= {
-			'0',
-			'1',
-			'2',
-			'3',
-			'4',
-			'5',
-			'6',
-			'7',
-			'8',
-			'9',
-			'a',
-			'b',
-			'c',
-			'd',
-			'e',
-			'f',
-			'g',
-			'h',
-			'i',
-			'j',
-			'k',
-			'l',
-			'm',
-			'n',
-			'o',
-			'p',
-			'q',
-			'r',
-			's',
-			't',
-			'u',
-			'v',
-			'w',
-			'x',
-			'y',
-			'z'																};
-	
+
 	// Requires positive x
 	private static final int stringSizeOfLong(final long x) {
+
 		long p = 10;
 		for (int i = 1; i < 19; ++i) {
 			if (x < p) {
@@ -373,36 +132,53 @@ public final class EventInterceptor extends LogReceiver implements ActService {
 		}
 		return 19;
 	}
-	
+
+	private boolean destroyed = false;
+
+	private final FifoQueueServiceMultithreadSwitching<Event> queue = new FifoQueueServiceMultithreadSwitching<>();
+
+	private volatile int stsLoops;
+
+	private volatile int stsUnhandled;
+
+	private byte[] rBuffer = new byte[2048];
+
+	private int rBufferLength;
+
 	private EventInterceptor() {
-		Act.launchService( null, this );
+
+		Act.launchService(null, this);
 	}
-	
+
 	@Override
 	protected String[] eventClasses() {
+
 		return null;
 	}
-	
+
 	@Override
 	protected String[] eventTypes() {
+
 		return null;
 	}
-	
+
 	private final void headAppend(final int c) {
+
 		final int newCount = this.rBufferLength + 1;
 		if (newCount > this.rBuffer.length) {
-			this.headExpand( newCount );
+			this.headExpand(newCount);
 		}
 		this.rBuffer[this.rBufferLength++] = (byte) c;
 	}
-	
+
 	final void headAppend(long l) {
+
 		final int appendedLength = l < 0
-				? EventInterceptor.stringSizeOfLong( -l ) + 1
-				: EventInterceptor.stringSizeOfLong( l );
+			? EventInterceptor.stringSizeOfLong(-l) + 1
+			: EventInterceptor.stringSizeOfLong(l);
 		final int spaceNeeded = this.rBufferLength + appendedLength;
 		if (spaceNeeded > this.rBuffer.length) {
-			this.headExpand( spaceNeeded );
+			this.headExpand(spaceNeeded);
 		}
 		long q;
 		int r;
@@ -446,44 +222,48 @@ public final class EventInterceptor extends LogReceiver implements ActService {
 		}
 		this.rBufferLength = spaceNeeded;
 	}
-	
+
 	private void headAppend(final String s) {
-		this.headAppend( ' ' );
+
+		this.headAppend(' ');
 		if (s == null) {
-			this.headAppend( 'n' );
-			this.headAppend( 'u' );
-			this.headAppend( 'l' );
-			this.headAppend( 'l' );
+			this.headAppend('n');
+			this.headAppend('u');
+			this.headAppend('l');
+			this.headAppend('l');
 			return;
 		}
-		this.headAppend( '"' );
+		this.headAppend('"');
 		for (int i = 0, l = s.length(); l > 0; ++i, --l) {
-			final char c = s.charAt( i );
+			final char c = s.charAt(i);
 			switch (c) {
-			case '\n':
-				this.headAppend( '\r' );
-				this.headAppend( '\n' );
-				this.headAppend( '\t' );
-				continue;
-			case '"':
-				this.headAppend( '\\' );
-				break;
+				case '\n' :
+					this.headAppend('\r');
+					this.headAppend('\n');
+					this.headAppend('\t');
+					continue;
+				case '"' :
+					this.headAppend('\\');
+					break;
+				default :
 			}
-			this.headAppend( c );
+			this.headAppend(c);
 		}
-		this.headAppend( '"' );
+		this.headAppend('"');
 	}
-	
+
 	private final void headAppendCRLF() {
+
 		final int newCount = this.rBufferLength + 2;
 		if (newCount > this.rBuffer.length) {
-			this.headExpand( newCount );
+			this.headExpand(newCount);
 		}
 		this.rBuffer[this.rBufferLength++] = '\r';
 		this.rBuffer[this.rBufferLength++] = '\n';
 	}
-	
+
 	private final void headExpand(final int minimumCapacity) {
+
 		int newCapacity = (this.rBuffer.length + 1) * 2;
 		if (newCapacity < 0) {
 			newCapacity = Integer.MAX_VALUE;
@@ -492,41 +272,40 @@ public final class EventInterceptor extends LogReceiver implements ActService {
 			newCapacity = minimumCapacity;
 		}
 		final byte newValue[] = new byte[newCapacity];
-		System.arraycopy( this.rBuffer, 0, newValue, 0, this.rBufferLength );
+		System.arraycopy(this.rBuffer, 0, newValue, 0, this.rBufferLength);
 		this.rBuffer = newValue;
 	}
-	
+
 	@Override
 	public final boolean main() throws Throwable {
-		/**
-		 * wait for the first event
-		 */
-		this.queue.switchPlanesWaitReady( 0L );
-		
+
+		/** wait for the first event */
+		this.queue.switchPlanesWaitReady(0L);
+
 		this.stsLoops++;
 		for (int loops = 256; loops > 0; loops--) {
-			/**
-			 * destroy will notify
-			 */
-			final FifoQueueMultithreadEnqueue<Event> queue = this.queue.switchPlanesWait( 0L );
+			/** destroy will notify */
+			final FifoQueueMultithreadEnqueue<Event> queue = this.queue.switchPlanesWait(0L);
 			if (queue == null) {
 				return !this.destroyed;
 			}
 			synchronized (EventInterceptor.targets) {
 				for (Event next; (next = queue.pollFirst()) != null;) {
-					this.processEvent( next );
+					this.processEvent(next);
 				}
 			}
 		}
 		return !this.destroyed;
 	}
-	
+
 	@Override
 	protected void onEvent(final Event event) {
-		this.queue.offerLast( event );
+
+		this.queue.offerLast(event);
 	}
-	
+
 	void processEvent(final Event event) throws Throwable {
+
 		this.rBufferLength = 0;
 		{
 			long diff = (event.getDate() - Engine.STARTED) / 10L;
@@ -541,56 +320,60 @@ public final class EventInterceptor extends LogReceiver implements ActService {
 			this.rBufferLength = 9;
 		}
 		{
-			this.headAppend( ' ' );
-			this.headAppend( '[' );
-			this.headAppend( event.getProcess() );
-			this.headAppend( ']' );
+			this.headAppend(' ');
+			this.headAppend('[');
+			this.headAppend(event.getProcess());
+			this.headAppend(']');
 		}
 		{
-			this.headAppend( event.getEventTypeId() );
-			this.headAppend( event.getTitle() );
-			this.headAppend( event.getSubject() );
+			this.headAppend(event.getEventTypeId());
+			this.headAppend(event.getTitle());
+			this.headAppend(event.getSubject());
 			this.headAppendCRLF();
 		}
 		{
 			final byte[] bytes = new byte[this.rBufferLength];
-			System.arraycopy( this.rBuffer, 0, bytes, 0, this.rBufferLength );
+			System.arraycopy(this.rBuffer, 0, bytes, 0, this.rBufferLength);
 			for (final ObjectTarget<byte[]> target : EventInterceptor.targets) {
-				target.absorb( bytes );
+				target.absorb(bytes);
 			}
 		}
 	}
-	
+
 	@Override
 	public final boolean start() {
+
 		this.destroyed = false;
 		return true;
 	}
-	
+
 	@Override
 	public void statusFill(final StatusInfo data) {
-		super.statusFill( data );
-		data.put( "Handling Loops", this.stsLoops );
-		data.put( "Run Exceptions", this.stsUnhandled );
+
+		super.statusFill(data);
+		data.put("Handling Loops", this.stsLoops);
+		data.put("Run Exceptions", this.stsUnhandled);
 	}
-	
+
 	@Override
 	public final boolean stop() {
+
 		this.destroyed = true;
 		this.queue.switchQueueWaitCancel();
 		return false;
 	}
-	
+
 	@Override
 	public final boolean unhandledException(final Throwable t) {
+
 		this.stsUnhandled++;
-		Report.exception( "EVENT-INTERCEPTOR", "Unhandled exception in a main loop", t );
+		Report.exception("EVENT-INTERCEPTOR", "Unhandled exception in a main loop", t);
 		synchronized (this) {
 			try {
 				// sleep
-				Thread.sleep( 99L );
+				Thread.sleep(99L);
 				// wait for incoming
-				this.wait( 399L );
+				this.wait(399L);
 			} catch (final InterruptedException e) {
 				return false;
 			}

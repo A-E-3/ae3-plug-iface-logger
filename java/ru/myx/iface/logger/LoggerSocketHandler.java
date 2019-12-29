@@ -10,10 +10,10 @@ import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.security.MessageDigest;
+import java.util.function.Function;
 
 import ru.myx.ae3.Engine;
 import ru.myx.ae3.act.Act;
-import java.util.function.Function;
 import ru.myx.ae3.binary.Transfer;
 import ru.myx.ae3.binary.TransferBuffer;
 import ru.myx.ae3.binary.TransferCopier;
@@ -24,55 +24,52 @@ import ru.myx.ae3.flow.ObjectTarget;
 import ru.myx.ae3.report.EventInterceptor;
 import ru.myx.ae3.report.Report;
 import ru.myx.io.DataInputByteArrayFast;
+import ru.myx.util.WeakFinalizer;
 
-/**
- * @author myx
- * 
- * myx - barachta 
- *         "typecomment": Window>Preferences>Java>Templates. To enable and
- *         disable the creation of type comments go to
- *         Window>Preferences>Java>Code Generation.
- *         http://cloud.datashed.net/gems/starlady/TrillianPro.zip
- */
+/** @author myx
+ *
+ *         myx - barachta "typecomment": Window>Preferences>Java>Templates. To enable and disable
+ *         the creation of type comments go to Window>Preferences>Java>Code Generation.
+ *         http://cloud.datashed.net/gems/starlady/TrillianPro.zip */
 
 final class LoggerSocketHandler implements TransferTarget, TransferBuffer, ObjectTarget<byte[]> {
-
+	
 	static final int QBUFF_INIT = 1024;
-
+	
 	static final int QBUFF_STEP = 1024;
-
+	
 	static final int RBUFF_INIT = 4096;
-
+	
 	static int stBadRequests = 0;
-
+	
 	static int stExpands = 0;
-
+	
 	static int stRequests = 0;
-
+	
 	static int stUnexpectedFinalizations = 0;
-
+	
 	private static final KeepAliveReadConnector KEEP_ALIVE_CONNECTOR = new KeepAliveReadConnector();
-
+	
 	private static final int MAX_COMMAND_LENGTH = 128;
-
+	
 	private static final int MD_COMMAND = 0;
-
+	
 	private static final int MD_FIRSTBYTE = 1;
-
+	
 	private static final int MD_TELNET1 = 2;
-
+	
 	private static final int MD_TELNET2 = 3;
-
+	
 	private static final byte[] RESPONSE_INVALID_CHARACTER = "! invalid character\r\n".getBytes();
-
+	
 	private static final byte[] RESPONSE_TOO_LONG = "! too long\r\n".getBytes();
-
+	
 	private static final byte[] RESPONSE_DETACHED = "# watcher detached\r\n> ".getBytes();
-
+	
 	private static final byte[] RESPONSE_ATTACHED = "# watcher attach... ".getBytes();
-
+	
 	private static final byte[] RESPONSE_WELCOME = ("# Welcome to " + Engine.HOST_NAME + " running " + Engine.VERSION_STRING + "\r\n").getBytes();
-
+	
 	private final static byte[] TELNET_SETUP = new byte[]{
 			//
 			// DO SUPPRESS GO AHEAD
@@ -83,8 +80,7 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			(byte) 255, (byte) 251, (byte) 1,
 			// DON'T LINEMODE
 			(byte) 255, (byte) 254, (byte) 34,
-			/**
-			 * <code>
+			/** <code>
 			// DO TEMINAL TYPE
 			(byte) 255,
 			(byte) 253,
@@ -107,11 +103,10 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			(byte) 1,
 			(byte) 255,
 			(byte) 240,
-			</code>
-			 **/
+			</code> **/
 			// end
 	};
-
+	
 	private final static byte[] TERMINAL_SETUP = new byte[]{
 			//
 			// RESET
@@ -124,51 +119,75 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			(byte) 27, (byte) '[', (byte) 'c',
 			// end
 	};
-
+	
+	private static final void finalizeStatic(final LoggerSocketHandler x) {
+		
+		if (x.socket != null) {
+			if (x.socket.isOpen()) {
+				try {
+					x.socket.abort("Finalized");
+				} catch (final Throwable t) {
+					// ignore
+				}
+				LoggerSocketHandler.stUnexpectedFinalizations++;
+				Logger.LOG.event(Logger.PNAME_DMESG, "FINALIZE", "Unexpected http request finalization - non closed socket!" + x.sourcePeerIdentity);
+			} else {
+				LoggerSocketHandler.stUnexpectedFinalizations++;
+				Logger.LOG.event(Logger.PNAME_DMESG, "FINALIZE", "Unexpected http request finalization - non null socket! remote=" + x.sourcePeerIdentity);
+			}
+			x.socket = null;
+		}
+	}
+	
 	private final static void onError400() {
-
+		
 		LoggerSocketHandler.stBadRequests++;
 		LoggerSocketHandler.stRequests++;
 	}
-
+	
 	private char[] qBuffer;
-
+	
 	private int qBufferCapacity;
-
+	
 	private int qBufSize;
-
+	
 	private String qCommand;
-
+	
 	private int qLengthRemaining;
-
+	
 	private int qMode;
-
+	
 	private final int queueIndex;
-
+	
 	private boolean active;
-
+	
 	private byte[] rBuffer;
-
+	
 	private int rBufferLength;
-
+	
 	private int rBufferPosition;
-
+	
 	private TransferSocket socket;
-
+	
 	private String sourcePeerAddress;
-
+	
 	private String sourcePeerIdentity;
-
+	
+	{
+		WeakFinalizer.register(this, LoggerSocketHandler::finalizeStatic);
+	}
+	
 	LoggerSocketHandler(final int queueIndex) {
+		
 		this.queueIndex = queueIndex;
 		this.qBuffer = new char[LoggerSocketHandler.QBUFF_INIT];
 		this.qBufferCapacity = LoggerSocketHandler.QBUFF_INIT;
 		this.rBuffer = new byte[LoggerSocketHandler.RBUFF_INIT];
 	}
-
+	
 	@Override
 	public final void abort(final String reason) {
-
+		
 		EventInterceptor.doUnRegister(this);
 		this.qCommand = null;
 		this.socket = null;
@@ -181,13 +200,13 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			this.destroy();
 		}
 	}
-
+	
 	@Override
 	public boolean absorb(final byte[] object) {
-
+		
 		return this.socket.getTarget().absorbArray(object, 0, object.length);
 	}
-
+	
 	// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -203,13 +222,13 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 	// //////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 	@Override
 	public final boolean absorb(final int i) {
-
+		
 		return this.consumeNext(i);
 	}
-
+	
 	@Override
 	public final boolean absorbArray(final byte[] bytes, final int off, final int length) {
-
+		
 		for (int i = 0; i < length; ++i) {
 			if (!this.consumeNext(bytes[off + i] & 0xFF)) {
 				return false;
@@ -217,10 +236,10 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		}
 		return true;
 	}
-
+	
 	@Override
 	public final boolean absorbBuffer(final TransferBuffer buffer) {
-
+		
 		if (buffer.isDirectAbsolutely()) {
 			final byte[] bytes = buffer.toDirectArray();
 			return this.absorbArray(bytes, 0, bytes.length);
@@ -245,10 +264,10 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		}
 		return true;
 	}
-
+	
 	@Override
 	public final boolean absorbNio(final ByteBuffer buffer) {
-
+		
 		for (int i = buffer.remaining(); i > 0; --i) {
 			if (!this.consumeNext(buffer.get() & 0xFF)) {
 				return false;
@@ -256,15 +275,15 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		}
 		return true;
 	}
-
+	
 	@Override
 	public Class<? extends byte[]> accepts() {
-
+		
 		return byte[].class;
 	}
-
+	
 	private final boolean append(final int b) {
-
+		
 		if (this.qLengthRemaining == 0) {
 			this.socket.getTarget().absorbArray(LoggerSocketHandler.RESPONSE_TOO_LONG, 0, LoggerSocketHandler.RESPONSE_TOO_LONG.length);
 			Logger.LOG.event(Logger.PNAME_DMESG, "INFO", "BAD REQUEST: " + "length exceeded, mode=" + this.qMode + ", remote=" + this.sourcePeerIdentity);
@@ -281,10 +300,10 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		this.qBuffer[this.qBufSize++] = (char) b;
 		return --this.qLengthRemaining > 0;
 	}
-
+	
 	@Override
 	public final void close() {
-
+		
 		EventInterceptor.doUnRegister(this);
 		final TransferSocket socket = this.socket;
 		if (socket != null) {
@@ -293,9 +312,9 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			this.destroy();
 		}
 	}
-
+	
 	private final boolean consumeNext(final int b) {
-
+		
 		switch (this.qMode) {
 			case MD_COMMAND :
 				if (b == 0) {
@@ -368,67 +387,46 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 				return false;
 		}
 	}
-
+	
 	@Override
 	public final void destroy() {
-
+		
 		if (this.active && this.socket == null) {
 			this.active = false;
 			LoggerHandlerQueue.reuseParser(this, this.queueIndex);
 		}
 		this.rBufferPosition = 0;
 	}
-
+	
 	@Override
 	public <A, R> boolean enqueueAction(final ExecProcess ctx, final Function<A, R> function, final A argument) {
-
+		
 		Act.launch(ctx, function, argument);
 		return true;
 	}
-
-	@Override
-	protected final void finalize() throws Throwable {
-
-		if (this.socket != null) {
-			if (this.socket.isOpen()) {
-				try {
-					this.socket.abort("Finalized");
-				} catch (final Throwable t) {
-					// ignore
-				}
-				LoggerSocketHandler.stUnexpectedFinalizations++;
-				Logger.LOG.event(Logger.PNAME_DMESG, "FINALIZE", "Unexpected http request finalization - non closed socket!" + this.sourcePeerIdentity);
-			} else {
-				LoggerSocketHandler.stUnexpectedFinalizations++;
-				Logger.LOG.event(Logger.PNAME_DMESG, "FINALIZE", "Unexpected http request finalization - non null socket! remote=" + this.sourcePeerIdentity);
-			}
-			this.socket = null;
-		}
-		super.finalize();
-	}
-
+	
 	@Override
 	public final void force() {
-
+		
 		// ignore
 	}
-
+	
 	@Override
 	public MessageDigest getMessageDigest() {
-
+		
 		final MessageDigest digest = Engine.getMessageDigestInstance();
 		digest.update(this.rBuffer, this.rBufferPosition, this.rBufferLength);
 		return digest;
 	}
-
+	
 	@Override
 	public final boolean hasRemaining() {
-
+		
 		return this.rBufferLength - this.rBufferPosition > 0;
 	}
-
+	
 	private final void headAppend(final byte str[]) {
-
+		
 		final int newCount = this.rBufferLength + str.length;
 		if (newCount > this.rBuffer.length) {
 			this.headExpand(newCount);
@@ -436,9 +434,9 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		System.arraycopy(str, 0, this.rBuffer, this.rBufferLength, str.length);
 		this.rBufferLength = newCount;
 	}
-
+	
 	private final void headAppend(final String str) {
-
+		
 		if (str == null) {
 			this.headAppend("null");
 			return;
@@ -459,9 +457,9 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			this.headAppend(str.getBytes());
 		}
 	}
-
+	
 	private final void headAppendCRLF() {
-
+		
 		final int newCount = this.rBufferLength + 2;
 		if (newCount > this.rBuffer.length) {
 			this.headExpand(newCount);
@@ -469,9 +467,9 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		this.rBuffer[this.rBufferLength++] = '\r';
 		this.rBuffer[this.rBufferLength++] = '\n';
 	}
-
+	
 	private final void headExpand(final int minimumCapacity) {
-
+		
 		int newCapacity = (this.rBuffer.length + 1) * 2;
 		if (newCapacity < 0) {
 			newCapacity = Integer.MAX_VALUE;
@@ -483,9 +481,9 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		System.arraycopy(this.rBuffer, 0, newValue, 0, this.rBufferLength);
 		this.rBuffer = newValue;
 	}
-
+	
 	private final boolean headSend() {
-
+		
 		final byte[] bytes = this.toDirectArray();
 		try {
 			return this.socket.getTarget().absorbArray(bytes, 0, bytes.length);
@@ -493,21 +491,21 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			this.socket.getTarget().force();
 		}
 	}
-
+	
 	@Override
 	public final boolean isDirectAbsolutely() {
-
+		
 		return this.rBufferPosition == 0 && this.rBufferLength == this.rBuffer.length;
 	}
-
+	
 	@Override
 	public final boolean isSequence() {
-
+		
 		return false;
 	}
-
+	
 	final boolean isSocketPresentAndOpen() {
-
+		
 		if (this.socket == null) {
 			return false;
 		}
@@ -518,16 +516,16 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		this.socket = null;
 		return false;
 	}
-
+	
 	@Override
 	public final int next() {
-
+		
 		return this.rBuffer[this.rBufferPosition++] & 0xFF;
 	}
-
+	
 	@Override
 	public final int next(final byte[] buffer, final int offset, final int length) {
-
+		
 		final int amount = Math.min(this.rBufferLength - this.rBufferPosition, length);
 		if (amount > 0) {
 			System.arraycopy(this.rBuffer, this.rBufferPosition, buffer, offset, amount);
@@ -535,15 +533,15 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		}
 		return amount;
 	}
-
+	
 	@Override
 	public final TransferBuffer nextSequenceBuffer() {
-
+		
 		throw new UnsupportedOperationException("Not a sequence!");
 	}
-
+	
 	private final boolean onDoneRead() {
-
+		
 		this.socket.getSource().connectTarget(null);
 		try {
 			if ("exit".equals(this.qCommand)) {
@@ -574,9 +572,9 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			}
 		}
 	}
-
+	
 	final void prepare(final TransferSocket socket) {
-
+		
 		this.socket = socket;
 		this.sourcePeerAddress = socket.getRemoteAddress();
 		this.sourcePeerIdentity = socket.getIdentity();
@@ -594,22 +592,22 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		Logger.LOG.event(Logger.PNAME_DMESG, "INFO", "connection: " + socket);
 		EventInterceptor.doRegister(this);
 	}
-
+	
 	final void reconnect() {
-
+		
 		if (this.socket != null && this.socket.isOpen()) {
 			this.socket.getSource().connectTarget(this);
 		}
 	}
-
+	
 	@Override
 	public final long remaining() {
-
+		
 		return this.rBufferLength - this.rBufferPosition;
 	}
-
+	
 	private final String setMode(final int mode, final int maxLength) {
-
+		
 		try {
 			return new String(this.qBuffer, 0, this.qBufSize);
 		} finally {
@@ -618,16 +616,16 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 			this.qLengthRemaining = maxLength;
 		}
 	}
-
+	
 	@Override
 	public final TransferCopier toBinary() {
-
+		
 		return Transfer.createCopier(this.rBuffer, this.rBufferPosition, this.rBufferLength - this.rBufferPosition);
 	}
-
+	
 	@Override
 	public final byte[] toDirectArray() {
-
+		
 		if (this.rBufferPosition == 0 && this.rBufferLength == this.rBuffer.length) {
 			this.rBufferPosition = this.rBufferLength;
 			return this.rBuffer;
@@ -638,16 +636,16 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		this.rBufferPosition = this.rBufferLength;
 		return result;
 	}
-
+	
 	@Override
 	public final DataInputByteArrayFast toInputStream() {
-
+		
 		return new DataInputByteArrayFast(this.toDirectArray());
 	}
-
+	
 	@Override
 	public final TransferBuffer toNioBuffer(final ByteBuffer target) {
-
+		
 		final int remaining = this.rBufferLength - this.rBufferPosition;
 		if (remaining <= 0) {
 			this.destroy();
@@ -667,34 +665,34 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		this.rBufferPosition += writable;
 		return this;
 	}
-
+	
 	@Override
 	public final InputStreamReader toReaderUtf8() {
-
+		
 		return new InputStreamReader(this.toInputStream(), Engine.CHARSET_UTF8);
 	}
-
+	
 	@Override
 	public final String toString() {
-
+		
 		return "DMESG PARSER TARGET(" + System.identityHashCode(this) + ")";
 	}
-
+	
 	@Override
 	public final String toString(final Charset charset) {
-
+		
 		return new String(this.rBuffer, 0, this.rBufferLength, charset);
 	}
-
+	
 	@Override
 	public final String toString(final String charset) throws UnsupportedEncodingException {
-
+		
 		return new String(this.rBuffer, 0, this.rBufferLength, charset);
 	}
-
+	
 	@Override
 	public final TransferBuffer toSubBuffer(final long start, final long end) {
-
+		
 		final int remaining = this.rBufferLength - this.rBufferPosition;
 		if (start < 0 || start > end || end > remaining) {
 			throw new IllegalArgumentException("Indexes are out of bounds: start=" + start + ", end=" + end + ", length=" + remaining);
@@ -703,10 +701,10 @@ final class LoggerSocketHandler implements TransferTarget, TransferBuffer, Objec
 		this.rBufferPosition += start;
 		return this;
 	}
-
+	
 	@Override
 	public MessageDigest updateMessageDigest(final MessageDigest digest) {
-
+		
 		digest.update(this.rBuffer, this.rBufferPosition, this.rBufferLength);
 		return digest;
 	}
