@@ -4,6 +4,7 @@
 package ru.myx.ae3.report;
 
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
 import java.util.Set;
 
@@ -68,7 +69,7 @@ public final class EventInterceptor extends LogReceiver implements ActService {
 		synchronized (EventInterceptor.targets) {
 			try {
 				try {
-					return target.absorb("done.\r\n".getBytes(Engine.CHARSET_UTF8)) && EventInterceptor.targets.add(target);
+					return target.absorb("done.\r\n".getBytes(StandardCharsets.UTF_8)) && EventInterceptor.targets.add(target);
 				} catch (final RuntimeException e) {
 					throw e;
 				} catch (final Exception e) {
